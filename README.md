@@ -29,7 +29,6 @@ token = "Your session token here."
 ws_endpoint = "wss://api.shoonya.com/NorenWSTP/"
 
 ticker = ShoonyaTicker(ws_endpoint, username, token)
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 loop = asyncio.get_event_loop()
 ticker.start_websocket(
                 subscribe_callback= on_tick,
