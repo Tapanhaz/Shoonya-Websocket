@@ -1,7 +1,7 @@
 # Shoonya-Websocket
 Shoonya websocket based on picows
 
-#Example:
+# Example:
 ```
 import uvloop
 import asyncio
