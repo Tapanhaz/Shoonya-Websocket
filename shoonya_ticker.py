@@ -243,6 +243,7 @@ class ShoonyaClient(WSListener):
             if self._full_msg:
                 self._full_msg += frame.get_payload_as_memoryview()
                 #msg = self._full_msg.decode("utf-8")
+                msg = self._full_msg
                 self._full_msg.clear()
             else:
                 #msg = frame.get_payload_as_utf8_text()  # create error on close
