@@ -38,4 +38,5 @@ ticker.start_websocket(
                 )
 loop.call_later(5, ticker.subscribe, ["MCX|430106", "MCX|430107", "MCX|430268", "MCX|426265", "MCX|430269", "MCX|435487"])#["NSE|26009", "NSE|26000"])
 loop.call_later(10, ticker.close_websocket)
-loop.run_forever()```
+loop.run_forever()
+```
