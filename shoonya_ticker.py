@@ -124,12 +124,14 @@ class ShoonyaTicker:
                         feed_type=FeedType.SNAPQUOTE
                         )
                 else:
-                    map(
-                        partial(
-                            self.subscribe,
-                            feed_type = FeedType.SNAPQUOTE
-                        ),
-                        self.list_chunks(self.snapquote_list)
+                    list(
+                        map(
+                            partial(
+                                self.subscribe,
+                                feed_type = FeedType.SNAPQUOTE
+                            ),
+                            self.list_chunks(self.snapquote_list)
+                        )
                     )
             if self.touchline_list:
                 if len(self.touchline_list) < self.token_limit:
@@ -138,12 +140,14 @@ class ShoonyaTicker:
                         feed_type=FeedType.TOUCHLINE
                         )
                 else:
-                    map(
-                        partial(
-                            self.subscribe,
-                            feed_type = FeedType.TOUCHLINE
-                        ),
-                        self.list_chunks(self.touchline_list)
+                    list(
+                        map(
+                            partial(
+                                self.subscribe,
+                                feed_type = FeedType.TOUCHLINE
+                            ),
+                            self.list_chunks(self.touchline_list)
+                        )
                     )
 
             loop = asyncio.get_running_loop()
