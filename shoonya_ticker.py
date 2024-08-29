@@ -9,17 +9,23 @@ __author__ = "Tapan Hazarika"
 
 import ssl
 import json
-import uvloop
 import asyncio
 import logging
+import platform
 from enum import Enum
 from itertools import islice
 from functools import partial
 from typing import Any, Union, List, Literal, Generator
 from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType
 
+if platform.system() == "Windows":
+    import winloop
+    asyncio.set_event_loop_policy(winloop.EventLoopPolicy())
+else:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+
 logger = logging.getLogger(__name__)
-asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 class FeedType(Enum):
     TOUCHLINE = 1
