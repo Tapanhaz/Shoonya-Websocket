@@ -15,7 +15,7 @@ import platform
 from enum import Enum
 from itertools import islice
 from functools import partial
-from typing import Any, Union, List, Literal, Generator
+from typing import Any, Union, List, Dict, Literal, Generator
 from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType
 
 if platform.system() == "Windows":
@@ -118,40 +118,25 @@ class ShoonyaTicker:
                 return
         if msg["t"] == "ck" and msg["s"] == "OK":  
             if self.snapquote_list:
-                if len(self.snapquote_list) < self.token_limit:
-                    self.subscribe(
-                        instrument=self.snapquote_list, 
-                        feed_type=FeedType.SNAPQUOTE
-                        )
-                else:
-                    list(
-                        map(
-                            partial(
-                                self.subscribe,
-                                feed_type = FeedType.SNAPQUOTE
-                            ),
-                            self.list_chunks(self.snapquote_list)
-                        )
+                self.subscribe(
+                    instrument=self.snapquote_list, 
+                    feed_type=FeedType.SNAPQUOTE
                     )
             if self.touchline_list:
-                if len(self.touchline_list) < self.token_limit:
-                    self.subscribe(
-                        instrument=self.touchline_list, 
-                        feed_type=FeedType.TOUCHLINE
-                        )
-                else:
-                    list(
-                        map(
-                            partial(
-                                self.subscribe,
-                                feed_type = FeedType.TOUCHLINE
-                            ),
-                            self.list_chunks(self.touchline_list)
-                        )
+                self.subscribe(
+                    instrument=self.touchline_list, 
+                    feed_type=FeedType.TOUCHLINE
                     )
-
             loop = asyncio.get_running_loop()
             loop.create_task(self._ws_run_forever())
+
+    @staticmethod
+    def __prepare_chunk_values(
+            values: Dict[str, str],
+            chunk: List[str]        
+            )-> Dict[str, str]:
+        values["k"] = "#".join(chunk)
+        return values
 
     def subscribe(
             self, 
@@ -162,7 +147,24 @@ class ShoonyaTicker:
         if feed_type == FeedType.TOUCHLINE or feed_type == "t":
             values["t"] = "t"
             if isinstance(instrument, list):
-                values["k"] = "#".join(instrument)
+                if len(instrument) < self.token_limit:
+                    values["k"] = "#".join(instrument)
+                    self._ws_send(values)
+                else:
+                    values_chunks = list(
+                                        map(
+                                            partial(
+                                                self.__prepare_chunk_values,
+                                                values.copy()
+                                            ),
+                                            self.list_chunks(
+                                                        instrument,
+                                                        chunk_size= self.token_limit
+                                                        )  
+                                        )  
+                                    )
+                    list(map(self._ws_send, values_chunks))
+
                 self.touchline_list.extend(instrument)
             else:
                 values["k"] = instrument
@@ -171,7 +173,23 @@ class ShoonyaTicker:
         elif feed_type == FeedType.SNAPQUOTE or feed_type == "d":
             values["t"] = "d"
             if isinstance(instrument, list):
-                values["k"] = "#".join(instrument)
+                if len(instrument) < self.token_limit:
+                    values["k"] = "#".join(instrument)
+                    self._ws_send(values)
+                else:
+                    values_chunks = list(
+                                        map(
+                                            partial(
+                                                self.__prepare_chunk_values,
+                                                values.copy()
+                                            ),
+                                            self.list_chunks(
+                                                        instrument,
+                                                        chunk_size= self.token_limit
+                                                        )  
+                                        )  
+                                    )
+                    list(map(self._ws_send, values_chunks))
                 self.snapquote_list.extend(instrument)
             else:
                 values["k"] = instrument
@@ -187,13 +205,36 @@ class ShoonyaTicker:
 
         if feed_type == FeedType.TOUCHLINE or feed_type == "t":
             values["t"] = "u"
+            if isinstance(instrument, list):
+                values["k"] = "#".join(instrument)
+                self.touchline_list[:] = list(
+                                                filter(
+                                                    lambda i:i not in set(instrument),
+                                                    self.touchline_list
+                                                )    
+                                            )
+            else:
+                values["k"] = instrument
+                try:
+                    self.touchline_list.pop(self.touchline_list.index(instrument))
+                except ValueError:
+                    pass
         elif feed_type == FeedType.SNAPQUOTE or feed_type == "d":
             values["t"] = "ud"
-
-        if isinstance(instrument, list):
-            values["k"] = "#".join(instrument)
-        else:
-            values["k"] = instrument
+            if isinstance(instrument, list):
+                values["k"] = "#".join(instrument)
+                self.snapquote_list[:] = list(
+                                                filter(
+                                                    lambda i:i not in set(instrument),
+                                                    self.snapquote_list
+                                                )    
+                                            )
+            else:
+                values["k"] = instrument
+                try:
+                    self.snapquote_list.pop(self.snapquote_list.index(instrument))
+                except ValueError:
+                    pass
         self.__ws_send(values)
 
     async def start_ticker(self)-> None:
