@@ -117,14 +117,20 @@ class ShoonyaTicker:
                 self.__on_error(msg)
                 return
         if msg["t"] == "ck" and msg["s"] == "OK":  
+            #I observed it never got disconnected in case of network failure. 
+            # So the reconnection logic is actually not needed.
             if self.snapquote_list:
+                snapquote_temp = self.snapquote_list[:]
+                self.snapquote_list.clear()
                 self.subscribe(
-                    instrument=self.snapquote_list, 
+                    instrument=snapquote_temp, 
                     feed_type=FeedType.SNAPQUOTE
                     )
             if self.touchline_list:
+                touchline_temp = self.touchline_list[:]
+                self.touchline_list.clear()
                 self.subscribe(
-                    instrument=self.touchline_list, 
+                    instrument=touchline_temp, 
                     feed_type=FeedType.TOUCHLINE
                     )
             loop = asyncio.get_running_loop()
