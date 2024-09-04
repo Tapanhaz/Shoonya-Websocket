@@ -53,4 +53,4 @@ if __name__ == "__main__":
     loop.call_later(20, ticker.close_websocket) 
     loop.run_forever()
 ```
-**__ Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance __** 
+**_Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_** 
