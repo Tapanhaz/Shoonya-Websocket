@@ -306,7 +306,10 @@ class ShoonyaClient(WSListener):
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
         elif frame.msg_type == WSMsgType.CLOSE:
-            logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={frame.get_close_message().decode()}")
+            close_msg = frame.get_close_message()
+            if close_msg:
+                close_msg = close_msg.decode()
+            logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={close_msg}")
             transport.disconnect()
         else:
             logger.info(f"Shoonya is expected to send text messages, instead received {frame.msg_type}")
