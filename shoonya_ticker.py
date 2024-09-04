@@ -9,13 +9,14 @@ __author__ = "Tapan Hazarika"
 
 import ssl
 import json
+import signal
 import asyncio
 import logging
 import platform
 from enum import Enum
 from itertools import islice
 from functools import partial
-from typing import Any, Union, List, Dict, Literal, Generator
+from typing import Any, Union, List, Dict, Literal, Generator, Optional
 from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType
 
 if platform.system() == "Windows":
@@ -75,6 +76,11 @@ class ShoonyaTicker:
             if not chunk:
                 break
             yield chunk  
+    
+    def stop_signal_handler(self, *args, **kwargs)-> None:
+        signal_type = args[0] if args else "Unknown signal"
+        logger.info(f"WebSocket closure initiated by user interrupt: {signal.Signals(signal_type).name}")
+        self.close_websocket()
 
     def _ws_send(
             self, 
@@ -99,7 +105,6 @@ class ShoonyaTicker:
             msg: str
             )-> None:
         try:
-            msg = msg.decode("utf-8")
             msg = json.loads(msg)
         except Exception as e:
             logger.error(f"WS message error : {e}")
@@ -295,20 +300,17 @@ class ShoonyaClient(WSListener):
             self, 
             transport: WSTransport, 
             frame: WSFrame
-            )-> None:
-        if frame.fin:
-            if self._full_msg:
-                self._full_msg += frame.get_payload_as_memoryview()
-                #msg = self._full_msg.decode("utf-8")
-                msg = self._full_msg
-                self._full_msg.clear()
-            else:
-                #msg = frame.get_payload_as_utf8_text()  # create error on close
-                msg = frame.get_payload_as_bytes()
+            )-> None:  
+        #assert frame.fin, "unexpected fragmented websocket message from Shoonya"
+        if frame.msg_type == WSMsgType.TEXT:
+            msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
+        elif frame.msg_type == WSMsgType.CLOSE:
+            logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={frame.get_close_message().decode()}")
+            transport.disconnect()
         else:
-            self._full_msg += frame.get_payload_as_memoryview()
-    
+            logger.info(f"Shoonya is expected to send text messages, instead received {frame.msg_type}")
+
     def on_ws_disconnected(
             self,
             transport: WSTransport        
