@@ -9,6 +9,7 @@ __author__ = "Tapan Hazarika"
 
 import ssl
 import json
+import socket
 import signal
 import asyncio
 import logging
@@ -17,7 +18,7 @@ from enum import Enum
 from itertools import islice
 from functools import partial
 from typing import Any, Union, List, Dict, Literal, Generator, Optional
-from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType
+from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType, WSCloseCode
 
 if platform.system() == "Windows":
     import winloop
@@ -39,18 +40,27 @@ class ShoonyaTicker:
             self, 
             ws_endpoint: str, 
             userid: str, 
-            token: str
+            token: str,
+            loop: Optional[asyncio.AbstractEventLoop]= None
             ) -> None:
         self._ws_endpoint = ws_endpoint 
         self._userid = userid 
         self._token = token 
         self._stop_event = asyncio.Event()
+        self.IS_CONNECTED = asyncio.Event()
         self.transport: WSTransport= None
         self.snapquote_list = []
         self.touchline_list = []
         self.__subscribe_callback = None
         self.__order_update_callback = None
         self.__on_error = None
+        self._disconnect_socket = False
+        self._is_running = False
+
+        self.__ping_msg = self._encode({"t": "h"})
+        self.__disconnect_message = self._encode("Connection closed by the user.")
+
+        self._loop = loop if loop else asyncio.get_event_loop()
 
     @staticmethod
     def create_client_ssl_context()-> ssl.SSLContext:
@@ -80,13 +90,15 @@ class ShoonyaTicker:
     def stop_signal_handler(self, *args, **kwargs)-> None:
         signal_type = args[0] if args else "Unknown signal"
         logger.info(f"WebSocket closure initiated by user interrupt: {signal.Signals(signal_type).name}")
-        self.close_websocket()
+        self.close_websocket()  
+        if not self._is_running:
+            self._initiate_shutdown()            
 
     def _ws_send(
             self, 
             msg: dict, 
             type: WSMsgType = WSMsgType.BINARY
-            )-> None:
+            )-> None:        
         payload = self._encode(msg)
         self.transport.send(type, payload)
 
@@ -94,7 +106,7 @@ class ShoonyaTicker:
         while not self._stop_event.is_set():
             try:
                 logger.debug("sending ping")
-                self._ws_send({"t": "h"})
+                self.transport.send_ping(message= self.__ping_msg)
                 await asyncio.sleep(self.ping_interval)
             except Exception as e:
                 logger.warning(f"websocket run forever ended in exception, {e}")
@@ -122,8 +134,6 @@ class ShoonyaTicker:
                 self.__on_error(msg)
                 return
         if msg["t"] == "ck" and msg["s"] == "OK":  
-            #I observed it never got disconnected in case of network failure. 
-            # So the reconnection logic is actually not needed.
             if self.snapquote_list:
                 snapquote_temp = self.snapquote_list[:]
                 self.snapquote_list.clear()
@@ -138,8 +148,7 @@ class ShoonyaTicker:
                     instrument=touchline_temp, 
                     feed_type=FeedType.TOUCHLINE
                     )
-            loop = asyncio.get_running_loop()
-            loop.create_task(self._ws_run_forever())
+            self._loop.create_task(self._ws_run_forever())
 
     @staticmethod
     def __prepare_chunk_values(
@@ -254,12 +263,16 @@ class ShoonyaTicker:
 
         client = ShoonyaClient()
         client.parent = self 
-        _, client = await ws_connect(
-                            lambda: client, 
-                            ws_endpoint, 
-                            ssl_context=ssl_context
-                            )
-        await client.transport.wait_disconnected()
+        try:
+            _, client = await ws_connect(
+                                lambda: client, 
+                                ws_endpoint, 
+                                ssl_context=ssl_context
+                                )
+            await client.transport.wait_disconnected()
+        except socket.gaierror as e:
+            logger.error(f"Error occured on connect :: {e}")
+            self._initiate_shutdown()
     
     def start_websocket(
                 self,
@@ -270,11 +283,30 @@ class ShoonyaTicker:
         self.__subscribe_callback = subscribe_callback
         self.__order_update_callback = order_update_callback
         self.__on_error = error_callback
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.start_ticker())
+        self._loop.create_task(self.start_ticker())
     
     def close_websocket(self)-> None:
-        self.transport.send_close()
+        self._disconnect_socket = True
+        self.transport.send_close(
+                        close_code= WSCloseCode.OK, 
+                        close_message=self.__disconnect_message
+                        )
+    
+    def _initiate_shutdown(self)-> None:
+        self._stop_event.set()
+        logger.info("Websocket disconnected.")
+        self._loop.call_soon_threadsafe(asyncio.create_task, self.shutdown(self._loop))
+        self.IS_CONNECTED.clear()
+
+    @staticmethod
+    async def shutdown(loop):
+        tasks = [
+            t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+            ]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        loop.stop()  
 
 
 class ShoonyaClient(WSListener):
@@ -288,13 +320,14 @@ class ShoonyaClient(WSListener):
             )-> None:
         self.transport = transport
         self.parent.transport = transport 
-        self._websocket_connected = True
+        self.parent._is_running = True
         values = {"t": "c"}
         values["uid"] = self.parent._userid        
         values["actid"] = self.parent._userid
         values["susertoken"] = self.parent._token
         values["source"] = 'API'                
         self.parent._ws_send(values)
+        self.parent.IS_CONNECTED.set()
 
     def on_ws_frame(
             self, 
@@ -305,10 +338,15 @@ class ShoonyaClient(WSListener):
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
+        elif frame.msg_type == WSMsgType.PONG:
+            pass            
         elif frame.msg_type == WSMsgType.CLOSE:
             close_msg = frame.get_close_message()
+            close_code = frame.get_close_code()
             if close_msg:
                 close_msg = close_msg.decode()
+            if close_code == 1008:
+                self.parent._disconnect_socket = True
             logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={close_msg}")
             transport.disconnect()
         else:
@@ -318,19 +356,10 @@ class ShoonyaClient(WSListener):
             self,
             transport: WSTransport        
             )-> None:
-        self.parent._stop_event.set()
-        logger.info("Websocket disconnected.")
-        loop = asyncio.get_running_loop()
-        loop.call_soon_threadsafe(asyncio.create_task, self.shutdown(loop))
-
-    @staticmethod
-    async def shutdown(loop):
-        tasks = [
-            t for t in asyncio.all_tasks() if t is not asyncio.current_task()
-            ]
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        loop.stop()    
-
-    
+        self.parent._is_running = False
+        if self.parent._disconnect_socket:
+            self.parent._initiate_shutdown() 
+        else: 
+            logger.info("Trying to reconnect..")
+            transport.disconnect()
+            self.parent._loop.create_task(self.parent.start_ticker())
