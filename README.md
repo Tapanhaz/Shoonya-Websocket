@@ -8,7 +8,7 @@ import signal
 import asyncio
 import logging
 import platform
-from shoonya_ticker_i import ShoonyaTicker
+from shoonya_ticker import ShoonyaTicker
 
 if platform.system() == "Windows":
     import winloop
