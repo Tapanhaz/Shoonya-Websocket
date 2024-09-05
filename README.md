@@ -7,8 +7,6 @@ N.B -> Not supported disconnection > 10 minutes for now.
 
 # Example:
 ```
-
-import signal
 import asyncio
 import logging
 import platform
@@ -39,9 +37,6 @@ if __name__ == "__main__":
 
     ticker = ShoonyaTicker(ws_endpoint, username, token)
 
-    signal.signal(signal.SIGINT, ticker.stop_signal_handler)
-    signal.signal(signal.SIGTERM, ticker.stop_signal_handler)
-
     loop = asyncio.get_event_loop()
 
     ticker.start_websocket(
@@ -60,12 +55,10 @@ if __name__ == "__main__":
 
 # Example waiting for connection to be properly established before subscribing to tokens
 ```
-
-import signal
 import asyncio
 import logging
 import platform
-from shoonya_ticker import ShoonyaTicker
+from shoonya_ticker_i import ShoonyaTicker
 
 if platform.system() == "Windows":
     import winloop
@@ -90,9 +83,7 @@ async def main(
             loop: asyncio.AbstractEventLoop,
             token_list: list
             )-> None:
-    signal.signal(signal.SIGINT, ticker.stop_signal_handler)
-    signal.signal(signal.SIGTERM, ticker.stop_signal_handler)
-
+    
     ticker.start_websocket(
                     subscribe_callback= on_tick,
                     order_update_callback= on_order_update,
