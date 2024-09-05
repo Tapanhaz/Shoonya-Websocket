@@ -55,12 +55,12 @@ class ShoonyaTicker:
         self.__order_update_callback = None
         self.__on_error = None
         self._disconnect_socket = False
-        self._is_running = False
 
         self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = self._encode("Connection closed by the user.")
 
         self._loop = loop if loop else asyncio.get_event_loop()
+        self.add_signal_handler()
 
     @staticmethod
     def create_client_ssl_context()-> ssl.SSLContext:
@@ -87,12 +87,20 @@ class ShoonyaTicker:
                 break
             yield chunk  
     
-    def stop_signal_handler(self, *args, **kwargs)-> None:
-        signal_type = args[0] if args else "Unknown signal"
-        logger.info(f"WebSocket closure initiated by user interrupt: {signal.Signals(signal_type).name}")
+    async def stop_signal_handler(self, *args, **kwargs)-> None:
+        logger.info(f"WebSocket closure initiated by user interrupt.")
         self.close_websocket()  
-        if not self._is_running:
-            self._initiate_shutdown()            
+        try:
+            await asyncio.wait_for(self._stop_event.wait(), timeout=2)
+        except TimeoutError:
+            self._initiate_shutdown() 
+
+    def add_signal_handler(self)-> None:
+        for signame in ('SIGINT', 'SIGTERM'):
+            self._loop.add_signal_handler(
+                                getattr(signal, signame),
+                                lambda: asyncio.create_task(self.stop_signal_handler())
+                                )
 
     def _ws_send(
             self, 
@@ -320,7 +328,6 @@ class ShoonyaClient(WSListener):
             )-> None:
         self.transport = transport
         self.parent.transport = transport 
-        self.parent._is_running = True
         values = {"t": "c"}
         values["uid"] = self.parent._userid        
         values["actid"] = self.parent._userid
@@ -334,7 +341,7 @@ class ShoonyaClient(WSListener):
             transport: WSTransport, 
             frame: WSFrame
             )-> None:  
-        #assert frame.fin, "unexpected fragmented websocket message from Shoonya"
+        assert frame.fin, "unexpected fragmented websocket message from Shoonya"
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
@@ -347,6 +354,7 @@ class ShoonyaClient(WSListener):
                 close_msg = close_msg.decode()
             if close_code == 1008:
                 self.parent._disconnect_socket = True
+                close_msg = "Invalid credentials."
             logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={close_msg}")
             transport.disconnect()
         else:
@@ -356,7 +364,6 @@ class ShoonyaClient(WSListener):
             self,
             transport: WSTransport        
             )-> None:
-        self.parent._is_running = False
         if self.parent._disconnect_socket:
             self.parent._initiate_shutdown() 
         else: 
