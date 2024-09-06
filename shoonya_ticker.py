@@ -55,6 +55,7 @@ class ShoonyaTicker:
         self.__order_update_callback = None
         self.__on_error = None
         self._disconnect_socket = False
+        self._json_decoder = json.JSONDecoder()
 
         self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = self._encode("Connection closed by the user.")
@@ -68,7 +69,8 @@ class ShoonyaTicker:
         ssl_context.load_default_certs(ssl.Purpose.SERVER_AUTH)
         ssl_context.check_hostname = False
         ssl_context.hostname_checks_common_name = False
-        ssl_context.verify_mode = ssl.CERT_REQUIRED
+        #ssl_context.verify_mode = ssl.CERT_REQUIRED
+        ssl_context.verify_mode = ssl.CERT_NONE
         return ssl_context
     
     @staticmethod
@@ -125,7 +127,7 @@ class ShoonyaTicker:
             msg: str
             )-> None:
         try:
-            msg = json.loads(msg)
+            msg = self._json_decoder.decode(msg)
         except Exception as e:
             logger.error(f"WS message error : {e}")
             return
@@ -341,7 +343,7 @@ class ShoonyaClient(WSListener):
             transport: WSTransport, 
             frame: WSFrame
             )-> None:  
-        assert frame.fin, "unexpected fragmented websocket message from Shoonya"
+        #assert frame.fin, "unexpected fragmented websocket message from Shoonya"
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
