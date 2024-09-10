@@ -97,7 +97,6 @@ class ShoonyaTicker:
         try:
             await asyncio.wait_for(self._stop_event.wait(), timeout=2)
         except TimeoutError:
-            print("we are here")
             self._initiate_shutdown() 
 
     def add_signal_handler(self):
