@@ -10,6 +10,7 @@ __author__ = "Tapan Hazarika"
 import ssl
 import json
 import socket
+#import orjson
 import signal
 import asyncio
 import logging
@@ -90,14 +91,16 @@ class ShoonyaTicker:
             yield chunk  
     
     async def stop_signal_handler(self, *args, **kwargs)-> None:
+        signal_type = args[0] if args else "Unknown signal"
         logger.info(f"WebSocket closure initiated by user interrupt.")
         self.close_websocket()  
         try:
             await asyncio.wait_for(self._stop_event.wait(), timeout=2)
         except TimeoutError:
+            print("we are here")
             self._initiate_shutdown() 
 
-    def add_signal_handler(self)-> None:
+    def add_signal_handler(self):
         for signame in ('SIGINT', 'SIGTERM'):
             self._loop.add_signal_handler(
                                 getattr(signal, signame),
@@ -108,7 +111,8 @@ class ShoonyaTicker:
             self, 
             msg: dict, 
             type: WSMsgType = WSMsgType.BINARY
-            )-> None:        
+            )-> None: 
+        #logger.info(msg)       
         payload = self._encode(msg)
         self.transport.send(type, payload)
 
@@ -117,7 +121,7 @@ class ShoonyaTicker:
             try:
                 logger.debug("sending ping")
                 self.transport.send_ping(message= self.__ping_msg)
-                await asyncio.sleep(self.ping_interval)
+                await asyncio.sleep(10)
             except Exception as e:
                 logger.warning(f"websocket run forever ended in exception, {e}")
             await asyncio.sleep(.1)
@@ -127,12 +131,14 @@ class ShoonyaTicker:
             msg: str
             )-> None:
         try:
+            #msg = json.loads(msg)
             msg = self._json_decoder.decode(msg)
+            #msg = orjson.loads(msg)
         except Exception as e:
             logger.error(f"WS message error : {e}")
             return
         if self.__subscribe_callback:
-            if msg["t"] in ("tk", "tf", "dk", "df"):
+            if msg["t"] in ("df", "tf", "dk", "tk"):    #("tk", "tf", "dk", "df"):
                 self.__subscribe_callback(msg)
                 return
         if self.__order_update_callback:
@@ -160,6 +166,7 @@ class ShoonyaTicker:
                     )
             self._loop.create_task(self._ws_run_forever())
 
+    '''
     @staticmethod
     def __prepare_chunk_values(
             values: Dict[str, str],
@@ -167,6 +174,16 @@ class ShoonyaTicker:
             )-> Dict[str, str]:
         values["k"] = "#".join(chunk)
         return values
+    '''
+
+    @staticmethod
+    def __prepare_chunk_values(
+            values: Dict[str, str],
+            chunk: List[str]        
+            )-> Dict[str, str]:
+        values_copy = values.copy()
+        values_copy["k"] = "#".join(chunk)
+        return values_copy
 
     def subscribe(
             self, 
@@ -183,9 +200,10 @@ class ShoonyaTicker:
                 else:
                     values_chunks = list(
                                         map(
-                                            partial(
+                                            partial(                                                
                                                 self.__prepare_chunk_values,
-                                                values.copy()
+                                                values                #values.copy()
+                                                
                                             ),
                                             self.list_chunks(
                                                         instrument,
@@ -199,7 +217,7 @@ class ShoonyaTicker:
             else:
                 values["k"] = instrument
                 self.touchline_list.append(instrument)
-            self._ws_send(values)
+                self._ws_send(values)
         elif feed_type == FeedType.SNAPQUOTE or feed_type == "d":
             values["t"] = "d"
             if isinstance(instrument, list):
@@ -211,7 +229,7 @@ class ShoonyaTicker:
                                         map(
                                             partial(
                                                 self.__prepare_chunk_values,
-                                                values.copy()
+                                                values              #values.copy()
                                             ),
                                             self.list_chunks(
                                                         instrument,
@@ -224,7 +242,7 @@ class ShoonyaTicker:
             else:
                 values["k"] = instrument
                 self.snapquote_list.append(instrument)
-            self._ws_send(values)
+                self._ws_send(values)
     
     def unsubscribe(
             self, 
@@ -297,10 +315,11 @@ class ShoonyaTicker:
     
     def close_websocket(self)-> None:
         self._disconnect_socket = True
-        self.transport.send_close(
-                        close_code= WSCloseCode.OK, 
-                        close_message=self.__disconnect_message
-                        )
+        if self.transport:
+            self.transport.send_close(
+                            close_code= WSCloseCode.OK, 
+                            close_message=self.__disconnect_message
+                            )
     
     def _initiate_shutdown(self)-> None:
         self._stop_event.set()
@@ -347,7 +366,8 @@ class ShoonyaClient(WSListener):
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
-        elif frame.msg_type == WSMsgType.PONG:
+            return
+        if frame.msg_type == WSMsgType.PONG:
             pass            
         elif frame.msg_type == WSMsgType.CLOSE:
             close_msg = frame.get_close_message()
@@ -357,7 +377,7 @@ class ShoonyaClient(WSListener):
             if close_code == 1008:
                 self.parent._disconnect_socket = True
                 close_msg = "Invalid credentials."
-            logger.info( f"Shoonya Ticker disconnected, code={frame.get_close_code()}, reason={close_msg}")
+            logger.info( f"Shoonya Ticker disconnected, code={close_code}, reason={close_msg}")
             transport.disconnect()
         else:
             logger.info(f"Shoonya is expected to send text messages, instead received {frame.msg_type}")
