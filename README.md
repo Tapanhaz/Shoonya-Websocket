@@ -43,7 +43,7 @@ async def main(
                     error_callback= on_error
                     )
     await ticker.IS_CONNECTED.wait()
-    loop.call_soon_threadsafe(ticker.subscribe, token_list)
+    loop.call_soon(ticker.subscribe, token_list)
 
 if __name__ == "__main__":
     username = "Your username here."
