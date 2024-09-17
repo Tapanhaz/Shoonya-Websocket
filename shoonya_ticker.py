@@ -282,7 +282,7 @@ class ShoonyaTicker:
                     self.snapquote_list.pop(self.snapquote_list.index(instrument))
                 except ValueError:
                     pass
-        self.__ws_send(values)
+        self._ws_send(values)
 
     async def start_ticker(self)-> None:
         ssl_context = self.create_client_ssl_context()
