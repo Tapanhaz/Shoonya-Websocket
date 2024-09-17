@@ -46,6 +46,8 @@ if __name__ == "__main__":
                     )
     
     tokens_list = ["BSE|1", "BSE|12", "NSE|26000", "NSE|26009", "MCX|430106", "MCX|430107"]
+    #This will make the program wait for websocket to be connected
+    await ticker.IS_CONNECTED.wait()
     #This will subscribe to tokens after 5 seconds 
     loop.call_later(5, ticker.subscribe, tokens_list)
     # This will close websocket after 20 seconds
