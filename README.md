@@ -6,7 +6,7 @@ It will automatically handle resubscription to all tokens after a temporary netw
 N.B -> Not supported disconnection > 10 minutes for now. 
 
 # Example:
-```
+```python
 import asyncio
 import logging
 import platform
@@ -53,10 +53,11 @@ if __name__ == "__main__":
     # This will close websocket after 20 seconds
     loop.call_later(20, ticker.close_websocket) 
     loop.run_forever()
+
 ```
 
 # Example waiting for connection to be properly established before subscribing to tokens
-```
+```python
 import asyncio
 import logging
 import platform
@@ -107,6 +108,7 @@ if __name__ == "__main__":
     
     loop.create_task(main(ticker, loop, tokens_list))
     loop.run_forever()
+
 ```
 
 **_Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_** 
