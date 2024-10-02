@@ -8,9 +8,8 @@
 __author__ = "Tapan Hazarika"
 
 import ssl
-import json
 import socket
-#import orjson
+import orjson
 import signal
 import asyncio
 import logging
@@ -30,6 +29,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
+
 class FeedType(Enum):
     TOUCHLINE = 1
     SNAPQUOTE = 2
@@ -37,6 +38,7 @@ class FeedType(Enum):
 class ShoonyaTicker:
     token_limit = 30
     ping_interval = 3
+
     def __init__(
             self, 
             ws_endpoint: str, 
@@ -52,17 +54,21 @@ class ShoonyaTicker:
         self.transport: WSTransport= None
         self.snapquote_list = []
         self.touchline_list = []
-        self.__subscribe_callback = None
-        self.__order_update_callback = None
         self.__on_error = None
         self._disconnect_socket = False
-        self._json_decoder = json.JSONDecoder()
 
         self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = self._encode("Connection closed by the user.")
 
         self._loop = loop if loop else asyncio.get_event_loop()
         self.add_signal_handler()
+
+        self.__callback_map = {
+            "ck": partial(self.__handle_connection_message),
+            "udk": self.__unsubscribe_callback,
+            "uk": self.__unsubscribe_callback,
+            "am": self.__alert_message_callback
+            }
 
     @staticmethod
     def create_client_ssl_context()-> ssl.SSLContext:
@@ -75,8 +81,22 @@ class ShoonyaTicker:
         return ssl_context
     
     @staticmethod
+    async def _dummy_callback(msg)-> None:
+        logger.info(msg)
+        pass
+
+    @staticmethod
+    async def __unsubscribe_callback(msg):
+        logger.info(msg)
+    
+    @staticmethod
+    async def __alert_message_callback(msg):
+        logger.info(msg)
+    
+    @staticmethod
     def _encode(msg: str)-> bytes:
-        return json.dumps(msg).encode("utf_8")  
+        #return json.dumps(msg).encode("utf_8")  
+        return orjson.dumps(msg)
 
     @staticmethod
     def list_chunks(
@@ -91,7 +111,6 @@ class ShoonyaTicker:
             yield chunk  
     
     async def stop_signal_handler(self, *args, **kwargs)-> None:
-        signal_type = args[0] if args else "Unknown signal"
         logger.info(f"WebSocket closure initiated by user interrupt.")
         self.close_websocket()  
         try:
@@ -130,25 +149,19 @@ class ShoonyaTicker:
             msg: str
             )-> None:
         try:
-            #msg = json.loads(msg)
-            msg = self._json_decoder.decode(msg)
-            #msg = orjson.loads(msg)
-        except Exception as e:
-            logger.error(f"WS message error : {e}")
+            msg = orjson.loads(msg)
+            msg_type = msg["t"] 
+            self._loop.create_task(self.__callback_map.get(msg_type)(msg))
+        except (Exception, KeyError) as e:
+            logger.error(f"WS message error : {e} :: {msg}")
             return
-        if self.__subscribe_callback:
-            if msg["t"] in ("df", "tf", "dk", "tk"):    #("tk", "tf", "dk", "df"):
-                self.__subscribe_callback(msg)
-                return
-        if self.__order_update_callback:
-            if msg["t"] == "om":
-                self.__order_update_callback(msg)
-                return
-        if self.__on_error:
-            if msg["t"] == "ck" and msg["s"] != "OK":
-                self.__on_error(msg)
-                return
-        if msg["t"] == "ck" and msg["s"] == "OK":  
+            
+    async def __handle_connection_message(self, msg: dict) -> None:
+        if msg["s"] != "OK" and self.__on_error:
+            self._loop.create_task(self.__on_error(msg))
+            return
+        
+        if msg["s"] == "OK":
             if self.snapquote_list:
                 snapquote_temp = self.snapquote_list[:]
                 self.snapquote_list.clear()
@@ -156,6 +169,7 @@ class ShoonyaTicker:
                     instrument=snapquote_temp, 
                     feed_type=FeedType.SNAPQUOTE
                     )
+
             if self.touchline_list:
                 touchline_temp = self.touchline_list[:]
                 self.touchline_list.clear()
@@ -163,17 +177,7 @@ class ShoonyaTicker:
                     instrument=touchline_temp, 
                     feed_type=FeedType.TOUCHLINE
                     )
-            self._loop.create_task(self._ws_run_forever())
-
-    '''
-    @staticmethod
-    def __prepare_chunk_values(
-            values: Dict[str, str],
-            chunk: List[str]        
-            )-> Dict[str, str]:
-        values["k"] = "#".join(chunk)
-        return values
-    '''
+            self._loop.create_task(self._ws_run_forever())    
 
     @staticmethod
     def __prepare_chunk_values(
@@ -303,13 +307,22 @@ class ShoonyaTicker:
     
     def start_websocket(
                 self,
-                subscribe_callback: Any= None,
-                order_update_callback: Any= None,
-                error_callback: Any= None                        
+                subscribe_callback: Any= _dummy_callback,
+                order_update_callback: Any= _dummy_callback,
+                error_callback: Any= _dummy_callback                        
             )-> None:
         self.__subscribe_callback = subscribe_callback
         self.__order_update_callback = order_update_callback
         self.__on_error = error_callback
+        self.__callback_map = {
+                    "df": self.__subscribe_callback,
+                    "tf": self.__subscribe_callback,
+                    "dk": self.__subscribe_callback,
+                    "tk": self.__subscribe_callback,
+                    "om": self.__order_update_callback,
+                    **self.__callback_map
+                    }
+        
         self._loop.create_task(self.start_ticker())
     
     def close_websocket(self)-> None:
@@ -361,7 +374,6 @@ class ShoonyaClient(WSListener):
             transport: WSTransport, 
             frame: WSFrame
             )-> None:  
-        #assert frame.fin, "unexpected fragmented websocket message from Shoonya"
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
