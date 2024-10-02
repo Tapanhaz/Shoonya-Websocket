@@ -22,13 +22,13 @@ else:
 
 logging.basicConfig(level=logging.DEBUG)
 
-def on_tick(msg):
+async def on_tick(msg):
     print(f"tick : {msg}")
 
-def on_order_update(msg):
+async def on_order_update(msg):
     print(f"order : {msg}")
 
-def on_error(msg):
+async def on_error(msg):
     print(f"error : {msg}")
 
 async def main(
