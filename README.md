@@ -8,6 +8,7 @@ N.B -> Not supported disconnection > 10 minutes for now.
 
 # Example waiting for connection to be properly established before subscribing to tokens
 ```python
+import time
 import asyncio
 import logging
 import platform
@@ -31,6 +32,12 @@ async def on_order_update(msg):
 async def on_error(msg):
     print(f"error : {msg}")
 
+async def on_open(msg):
+    print(f"Socket opened :: {time.asctime()}")
+
+async def on_close(msg):
+    print(f"Socket closed :: {time.asctime()}")
+
 async def main(
             ticker:ShoonyaTicker,
             loop: asyncio.AbstractEventLoop,
@@ -40,7 +47,9 @@ async def main(
     ticker.start_websocket(
                     subscribe_callback= on_tick,
                     order_update_callback= on_order_update,
-                    error_callback= on_error
+                    error_callback= on_error,
+                    open_callback= on_open,
+                    close_callback= on_close
                     )
     await ticker.IS_CONNECTED.wait()
     loop.call_soon(ticker.subscribe, token_list)
