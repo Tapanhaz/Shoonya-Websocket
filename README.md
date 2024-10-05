@@ -35,7 +35,7 @@ async def on_error(msg):
 async def on_open(msg):
     print(f"Socket opened :: {time.asctime()}")
 
-async def on_close(msg):
+async def on_close():
     print(f"Socket closed :: {time.asctime()}")
 
 async def main(

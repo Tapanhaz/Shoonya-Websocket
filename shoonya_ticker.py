@@ -311,7 +311,7 @@ class ShoonyaTicker:
                                 ssl_context=ssl_context
                                 )
             await client.transport.wait_disconnected()
-        except socket.gaierror as e:
+        except (socket.gaierror, OSError) as e:
             logger.error(f"Error occured on connect :: {e}")
             if reconnect:
                 await asyncio.sleep(1)
