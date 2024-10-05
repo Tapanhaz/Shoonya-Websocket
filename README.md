@@ -4,6 +4,8 @@ Shoonya websocket based on picows : https://github.com/tarasko/picows
 It will automatically handle resubscription to all tokens after a temporary network failure
 
 N.B -> Not supported disconnection > 10 minutes for now. 
+
+
 N.B -> Check the develop branch. I will merge that branch soon.
 
 
