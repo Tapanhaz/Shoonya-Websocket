@@ -1,12 +1,23 @@
 # Shoonya-Websocket
 Shoonya websocket based on picows : https://github.com/tarasko/picows
 
-It will automatically handle resubscription to all tokens after a temporary network failure
+It will automatically handle resubscription to all tokens after a temporary network failure/ disconnection.
 
-N.B -> Not supported disconnection > 10 minutes for now. 
+For running in windows, it requires winloop.
 
+```
+pip install winloop
+```
 
-# Example waiting for connection to be properly established before subscribing to tokens
+For Linux, uvloop is required.
+
+```
+pip install uvloop
+```
+
+It requires python >= 3.11 to be installed
+
+# Example 
 ```python
 import time
 import asyncio

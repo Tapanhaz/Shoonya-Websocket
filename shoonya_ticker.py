@@ -149,7 +149,7 @@ class ShoonyaTicker:
                 self._pong_event.clear()
             except (TimeoutError, Exception) as e:
                 logger.warning("Websocket run forever ended with an exception :: No PONG received from server")
-                self.transport.disconnect()
+                self.transport.underlying_transport.abort()
                 break
 
     def on_data_callback(
