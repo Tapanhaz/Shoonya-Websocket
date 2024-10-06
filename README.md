@@ -10,7 +10,6 @@ pip install winloop
 ```
 
 For Linux, uvloop is required.
-
 ```
 pip install uvloop
 ```
@@ -18,6 +17,7 @@ pip install uvloop
 It requires python >= 3.11 to be installed
 
 # Example 
+=======
 ```python
 import time
 import asyncio
