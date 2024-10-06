@@ -1,16 +1,25 @@
 # Shoonya-Websocket
 Shoonya websocket based on picows : https://github.com/tarasko/picows
 
-It will automatically handle resubscription to all tokens after a temporary network failure
+It will automatically handle resubscription to all tokens after a temporary network failure/ disconnection.
 
-N.B -> Not supported disconnection > 10 minutes for now. 
+For running in windows, it requires winloop.
 
+```
+pip install winloop
+```
 
-N.B -> Check the develop branch. I will merge that branch soon.
+For Linux, uvloop is required.
+```
+pip install uvloop
+```
 
+It requires python >= 3.11 to be installed
 
-# Example waiting for connection to be properly established before subscribing to tokens
+# Example 
+=======
 ```python
+import time
 import asyncio
 import logging
 import platform
@@ -25,14 +34,20 @@ else:
 
 logging.basicConfig(level=logging.DEBUG)
 
-def on_tick(msg):
+async def on_tick(msg):
     print(f"tick : {msg}")
 
-def on_order_update(msg):
+async def on_order_update(msg):
     print(f"order : {msg}")
 
-def on_error(msg):
+async def on_error(msg):
     print(f"error : {msg}")
+
+async def on_open(msg):
+    print(f"Socket opened :: {time.asctime()}")
+
+async def on_close():
+    print(f"Socket closed :: {time.asctime()}")
 
 async def main(
             ticker:ShoonyaTicker,
@@ -43,7 +58,9 @@ async def main(
     ticker.start_websocket(
                     subscribe_callback= on_tick,
                     order_update_callback= on_order_update,
-                    error_callback= on_error
+                    error_callback= on_error,
+                    open_callback= on_open,
+                    close_callback= on_close
                     )
     await ticker.IS_CONNECTED.wait()
     loop.call_soon(ticker.subscribe, token_list)

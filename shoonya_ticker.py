@@ -8,9 +8,8 @@
 __author__ = "Tapan Hazarika"
 
 import ssl
-import json
 import socket
-#import orjson
+import orjson
 import signal
 import asyncio
 import logging
@@ -30,6 +29,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+
+
 class FeedType(Enum):
     TOUCHLINE = 1
     SNAPQUOTE = 2
@@ -37,6 +38,7 @@ class FeedType(Enum):
 class ShoonyaTicker:
     token_limit = 30
     ping_interval = 3
+
     def __init__(
             self, 
             ws_endpoint: str, 
@@ -49,20 +51,28 @@ class ShoonyaTicker:
         self._token = token 
         self._stop_event = asyncio.Event()
         self.IS_CONNECTED = asyncio.Event()
+        self._pong_event = asyncio.Event()
         self.transport: WSTransport= None
         self.snapquote_list = []
         self.touchline_list = []
-        self.__subscribe_callback = None
-        self.__order_update_callback = None
         self.__on_error = None
+        self.__on_open = None
+        self._on_close= None
         self._disconnect_socket = False
-        self._json_decoder = json.JSONDecoder()
 
         self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = self._encode("Connection closed by the user.")
 
         self._loop = loop if loop else asyncio.get_event_loop()
         self.add_signal_handler()
+
+        self.__callback_map = {
+            "ck": partial(self.__handle_connection_message),
+            "udk": self.__unsubscribe_callback,
+            "uk": self.__unsubscribe_callback,
+            "am": self.__alert_message_callback
+            }
+        
 
     @staticmethod
     def create_client_ssl_context()-> ssl.SSLContext:
@@ -75,8 +85,22 @@ class ShoonyaTicker:
         return ssl_context
     
     @staticmethod
+    async def _dummy_callback(msg)-> None:
+        #logger.info(msg)
+        pass
+
+    @staticmethod
+    async def __unsubscribe_callback(msg):
+        logger.info(msg)
+    
+    @staticmethod
+    async def __alert_message_callback(msg):
+        logger.info(msg)
+    
+    @staticmethod
     def _encode(msg: str)-> bytes:
-        return json.dumps(msg).encode("utf_8")  
+        #return json.dumps(msg).encode("utf_8")  
+        return orjson.dumps(msg)
 
     @staticmethod
     def list_chunks(
@@ -91,7 +115,6 @@ class ShoonyaTicker:
             yield chunk  
     
     async def stop_signal_handler(self, *args, **kwargs)-> None:
-        signal_type = args[0] if args else "Unknown signal"
         logger.info(f"WebSocket closure initiated by user interrupt.")
         self.close_websocket()  
         try:
@@ -116,39 +139,37 @@ class ShoonyaTicker:
         self.transport.send(type, payload)
 
     async def _ws_run_forever(self)-> None:
+        self._pong_event.set()
         while not self._stop_event.is_set():
             try:
+                await asyncio.wait_for(self._pong_event.wait(), timeout=20)
+                await asyncio.sleep(3)
                 logger.debug("sending ping")
                 self.transport.send_ping(message= self.__ping_msg)
-                await asyncio.sleep(10)
-            except Exception as e:
-                logger.warning(f"websocket run forever ended in exception, {e}")
-            await asyncio.sleep(.1)
+                self._pong_event.clear()
+            except (TimeoutError, Exception) as e:
+                logger.warning("Websocket run forever ended with an exception :: No PONG received from server")
+                self.transport.underlying_transport.abort()
+                break
 
     def on_data_callback(
             self, 
             msg: str
             )-> None:
         try:
-            #msg = json.loads(msg)
-            msg = self._json_decoder.decode(msg)
-            #msg = orjson.loads(msg)
-        except Exception as e:
-            logger.error(f"WS message error : {e}")
+            msg = orjson.loads(msg)
+            msg_type = msg["t"] 
+            self._loop.create_task(self.__callback_map.get(msg_type)(msg))
+        except (Exception, KeyError) as e:
+            logger.error(f"WS message error : {e} :: {msg}")
             return
-        if self.__subscribe_callback:
-            if msg["t"] in ("df", "tf", "dk", "tk"):    #("tk", "tf", "dk", "df"):
-                self.__subscribe_callback(msg)
-                return
-        if self.__order_update_callback:
-            if msg["t"] == "om":
-                self.__order_update_callback(msg)
-                return
-        if self.__on_error:
-            if msg["t"] == "ck" and msg["s"] != "OK":
-                self.__on_error(msg)
-                return
-        if msg["t"] == "ck" and msg["s"] == "OK":  
+            
+    async def __handle_connection_message(self, msg: dict) -> None:
+        if msg["s"] != "OK" and self.__on_error:
+            self._loop.create_task(self.__on_error(msg))
+            return
+        
+        if msg["s"] == "OK":
             if self.snapquote_list:
                 snapquote_temp = self.snapquote_list[:]
                 self.snapquote_list.clear()
@@ -156,6 +177,7 @@ class ShoonyaTicker:
                     instrument=snapquote_temp, 
                     feed_type=FeedType.SNAPQUOTE
                     )
+
             if self.touchline_list:
                 touchline_temp = self.touchline_list[:]
                 self.touchline_list.clear()
@@ -163,17 +185,9 @@ class ShoonyaTicker:
                     instrument=touchline_temp, 
                     feed_type=FeedType.TOUCHLINE
                     )
-            self._loop.create_task(self._ws_run_forever())
-
-    '''
-    @staticmethod
-    def __prepare_chunk_values(
-            values: Dict[str, str],
-            chunk: List[str]        
-            )-> Dict[str, str]:
-        values["k"] = "#".join(chunk)
-        return values
-    '''
+            self._loop.create_task(self._ws_run_forever())   
+            if self.__on_open:
+                self._loop.create_task(self.__on_open(msg)) 
 
     @staticmethod
     def __prepare_chunk_values(
@@ -284,7 +298,7 @@ class ShoonyaTicker:
                     pass
         self._ws_send(values)
 
-    async def start_ticker(self)-> None:
+    async def start_ticker(self, reconnect: bool= False)-> None:
         ssl_context = self.create_client_ssl_context()
         ws_endpoint = self._ws_endpoint + self._token
 
@@ -297,19 +311,36 @@ class ShoonyaTicker:
                                 ssl_context=ssl_context
                                 )
             await client.transport.wait_disconnected()
-        except socket.gaierror as e:
+        except (socket.gaierror, OSError) as e:
             logger.error(f"Error occured on connect :: {e}")
-            self._initiate_shutdown()
+            if reconnect:
+                await asyncio.sleep(1)
+                return await self.start_ticker(reconnect=True)
+            else:
+                self._initiate_shutdown()
     
     def start_websocket(
                 self,
-                subscribe_callback: Any= None,
-                order_update_callback: Any= None,
-                error_callback: Any= None                        
+                subscribe_callback: Any= _dummy_callback,
+                order_update_callback: Any= _dummy_callback,
+                error_callback: Any= None,
+                open_callback: Any= None,
+                close_callback: Any= None                                         
             )-> None:
         self.__subscribe_callback = subscribe_callback
         self.__order_update_callback = order_update_callback
         self.__on_error = error_callback
+        self.__on_open = open_callback
+        self._on_close = close_callback
+        self.__callback_map = {
+                    "df": self.__subscribe_callback,
+                    "tf": self.__subscribe_callback,
+                    "dk": self.__subscribe_callback,
+                    "tk": self.__subscribe_callback,
+                    "om": self.__order_update_callback,
+                    **self.__callback_map
+                    }
+        
         self._loop.create_task(self.start_ticker())
     
     def close_websocket(self)-> None:
@@ -361,13 +392,13 @@ class ShoonyaClient(WSListener):
             transport: WSTransport, 
             frame: WSFrame
             )-> None:  
-        #assert frame.fin, "unexpected fragmented websocket message from Shoonya"
         if frame.msg_type == WSMsgType.TEXT:
             msg = frame.get_payload_as_utf8_text()
             self.parent.on_data_callback(msg)
             return
         if frame.msg_type == WSMsgType.PONG:
-            pass            
+            #logger.info(frame)
+            self.parent._pong_event.set()          
         elif frame.msg_type == WSMsgType.CLOSE:
             close_msg = frame.get_close_message()
             close_code = frame.get_close_code()
@@ -385,9 +416,11 @@ class ShoonyaClient(WSListener):
             self,
             transport: WSTransport        
             )-> None:
+        if self.parent._on_close:
+            self.parent._loop.create_task(self.parent._on_close())
         if self.parent._disconnect_socket:
             self.parent._initiate_shutdown() 
         else: 
             logger.info("Trying to reconnect..")
             transport.disconnect()
-            self.parent._loop.create_task(self.parent.start_ticker())
+            self.parent._loop.create_task(self.parent.start_ticker(reconnect=True))
