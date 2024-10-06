@@ -63,7 +63,8 @@ async def main(
                     close_callback= on_close
                     )
     await ticker.IS_CONNECTED.wait()
-    loop.call_soon(ticker.subscribe, token_list)
+    #loop.call_soon(ticker.subscribe, token_list)
+    await ticker.subscribe(token_list)
 
 if __name__ == "__main__":
     username = "Your username here."
