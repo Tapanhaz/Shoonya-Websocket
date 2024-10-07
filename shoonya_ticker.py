@@ -16,7 +16,7 @@ import logging
 import platform
 from enum import Enum
 from itertools import islice
-from functools import partial
+from functools import partial, wraps
 from typing import Any, Union, List, Dict, Literal, Generator, Optional
 from picows import ws_connect, WSFrame, WSTransport, WSListener, WSMsgType, WSCloseCode
 
@@ -72,7 +72,15 @@ class ShoonyaTicker:
             "uk": self.__unsubscribe_callback,
             "am": self.__alert_message_callback
             }
-        
+    
+    @staticmethod
+    def run_in_thread():
+        def decorator(func):
+            @wraps(func)
+            async def wrapper(*args, **kwargs):
+                return await asyncio.to_thread(lambda: func(*args, **kwargs))
+            return wrapper
+        return decorator
 
     @staticmethod
     def create_client_ssl_context()-> ssl.SSLContext:
@@ -198,6 +206,7 @@ class ShoonyaTicker:
         values_copy["k"] = "#".join(chunk)
         return values_copy
 
+    @run_in_thread()
     def subscribe(
             self, 
             instrument: Union[str, list], 
@@ -257,6 +266,7 @@ class ShoonyaTicker:
                 self.snapquote_list.append(instrument)
                 self._ws_send(values)
     
+    @run_in_thread()
     def unsubscribe(
             self, 
             instrument: Union[str, list], 
