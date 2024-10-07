@@ -167,8 +167,8 @@ class ShoonyaTicker:
         try:
             msg = orjson.loads(msg)
             msg_type = msg["t"] 
-            self._loop.create_task(self.__callback_map.get(msg_type)(msg))
-        except (Exception, KeyError) as e:
+            self._loop.create_task(self.__callback_map[msg_type](msg))
+        except (KeyError, Exception) as e:
             logger.error(f"WS message error : {e} :: {msg}")
             return
             
