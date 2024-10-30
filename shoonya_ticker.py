@@ -181,7 +181,7 @@ class ShoonyaTicker:
             if self.snapquote_list:
                 snapquote_temp = self.snapquote_list[:]
                 self.snapquote_list.clear()
-                self.subscribe(
+                await self.subscribe(
                     instrument=snapquote_temp, 
                     feed_type=FeedType.SNAPQUOTE
                     )
@@ -189,7 +189,7 @@ class ShoonyaTicker:
             if self.touchline_list:
                 touchline_temp = self.touchline_list[:]
                 self.touchline_list.clear()
-                self.subscribe(
+                await self.subscribe(
                     instrument=touchline_temp, 
                     feed_type=FeedType.TOUCHLINE
                     )
