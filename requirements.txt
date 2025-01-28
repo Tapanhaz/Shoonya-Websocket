@@ -1,2 +1,2 @@
-picows==1.2.0
+picows >= 1.6.0 
 orjson
