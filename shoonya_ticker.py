@@ -329,8 +329,8 @@ class ShoonyaTicker:
                                 )
             await transport.wait_disconnected()
         except (socket.gaierror, OSError) as e:
-            logger.error(f"Error occured on connect :: {e}")
-            if reconnect:
+            logger.error(f"Error occured on connect :: {e}")          
+            if reconnect or str(e) == "websocket handshake timeout":
                 await asyncio.sleep(1)
                 return await self.start_ticker(reconnect=True)
             else:
