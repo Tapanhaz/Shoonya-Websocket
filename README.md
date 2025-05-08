@@ -82,4 +82,4 @@ if __name__ == "__main__":
 
 ```
 
-**_Special Thanks to [Shabbir Hassan](https://github.com/ShabbirHasan1) for suggesting me to try picows and [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_** 
+**_Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_** 
