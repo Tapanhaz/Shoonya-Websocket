@@ -70,7 +70,8 @@ class ShoonyaTicker:
             "ck": partial(self.__handle_connection_message),
             "udk": ShoonyaTicker.__unsubscribe_callback,
             "uk": ShoonyaTicker.__unsubscribe_callback,
-            "am": ShoonyaTicker.__alert_message_callback
+            "am": ShoonyaTicker.__alert_message_callback,
+            "ms": ShoonyaTicker.__alert_message_callback
             }
     
     @staticmethod
@@ -122,20 +123,23 @@ class ShoonyaTicker:
                 break
             yield chunk  
     
-    async def stop_signal_handler(self, *args, **kwargs)-> None:
+    async def stop_signal_handler(self, signum)-> None:
         logger.info(f"WebSocket closure initiated by user interrupt.")
         self.close_websocket()  
         try:
             await asyncio.wait_for(self._stop_event.wait(), timeout=2)
         except TimeoutError:
             self._initiate_shutdown() 
+        signal.raise_signal(signum)
+        
 
     def add_signal_handler(self):
         for signame in ('SIGINT', 'SIGTERM'):
+            signum = getattr(signal, signame)
             self._loop.add_signal_handler(
-                                getattr(signal, signame),
-                                lambda: asyncio.create_task(self.stop_signal_handler())
-                                )
+                signum,
+                lambda s=signum: asyncio.create_task(self.stop_signal_handler(s))
+            )
 
     def _ws_send(
             self, 
@@ -403,7 +407,7 @@ class ShoonyaClient(WSListener):
             )-> None:
         self.transport = transport
         self.__parent.transport = transport 
-        values = {"t": "c"}
+        values = {"t": "a"}
         values["uid"] = self.__parent._userid        
         values["actid"] = self.__parent._userid
         values["susertoken"] = self.__parent._token

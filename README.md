@@ -1,4 +1,5 @@
 # Shoonya-Websocket
+
 Shoonya websocket based on picows : https://github.com/tarasko/picows
 
 It will automatically handle resubscription to all tokens after a temporary network failure/ disconnection.
@@ -10,14 +11,17 @@ pip install winloop
 ```
 
 For Linux, uvloop is required.
+
 ```
 pip install uvloop
 ```
 
 It requires python >= 3.11 to be installed
 
-# Example 
+# Example
+
 =======
+
 ```python
 import time
 import asyncio
@@ -54,7 +58,7 @@ async def main(
             loop: asyncio.AbstractEventLoop,
             token_list: list
             )-> None:
-    
+
     ticker.start_websocket(
                     subscribe_callback= on_tick,
                     order_update_callback= on_order_update,
@@ -67,19 +71,19 @@ async def main(
     await ticker.subscribe(token_list)
 
 if __name__ == "__main__":
-    username = "Your username here."
+    user_id = "Your user id here."
     token = "Your session token here."
-    ws_endpoint = "wss://api.shoonya.com/NorenWSTP/"
+    ws_endpoint = "wss://api.shoonya.com/NorenWSAPI/"
 
-    ticker = ShoonyaTicker(ws_endpoint, username, token)
+    ticker = ShoonyaTicker(ws_endpoint, user_id, token)
 
     loop = asyncio.get_event_loop()
-    
+
     tokens_list = ["BSE|1", "BSE|12", "NSE|26000", "NSE|26009", "MCX|430106", "MCX|430107"]
-    
+
     loop.create_task(main(ticker, loop, tokens_list))
     loop.run_forever()
 
 ```
 
-**_Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_** 
+**_Special Thanks to [tarasc](https://github.com/tarasko) for this excellent library and for his valuable guidance_**
