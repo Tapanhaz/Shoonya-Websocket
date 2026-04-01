@@ -73,7 +73,7 @@ async def main(
 if __name__ == "__main__":
     user_id = "Your user id here."
     token = "Your session token here."
-    ws_endpoint = "wss://api.shoonya.com/NorenWSAPI/"
+    ws_endpoint = "wss://api.shoonya.com/NorenWSTP/"
 
     ticker = ShoonyaTicker(ws_endpoint, user_id, token)
 
