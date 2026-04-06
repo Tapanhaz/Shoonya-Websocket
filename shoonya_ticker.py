@@ -63,7 +63,14 @@ class ShoonyaTicker:
         #self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = ShoonyaTicker._encode("Connection closed by the user.")
 
-        self._loop = loop if loop else asyncio.get_event_loop()
+        if not loop:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+
+        self._loop = loop
+        
         self.add_signal_handler()
 
         self.__callback_map = {

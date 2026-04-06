@@ -75,9 +75,13 @@ if __name__ == "__main__":
     token = "Your session token here."
     ws_endpoint = "wss://api.shoonya.com/NorenWSAPI/"
 
-    ticker = ShoonyaTicker(ws_endpoint, user_id, token)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
 
-    loop = asyncio.get_event_loop()
+    ticker = ShoonyaTicker(ws_endpoint, user_id, token, loop)
+
 
     tokens_list = ["BSE|1", "BSE|12", "NSE|26000", "NSE|26009", "MCX|430106", "MCX|430107"]
 
