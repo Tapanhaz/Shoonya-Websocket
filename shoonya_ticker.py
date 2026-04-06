@@ -67,6 +67,7 @@ class ShoonyaTicker:
         self.add_signal_handler()
 
         self.__callback_map = {
+            "ak": partial(self.__handle_connection_message),
             "ck": partial(self.__handle_connection_message),
             "udk": ShoonyaTicker.__unsubscribe_callback,
             "uk": ShoonyaTicker.__unsubscribe_callback,
@@ -410,7 +411,7 @@ class ShoonyaClient(WSListener):
         values = {"t": "a"}
         values["uid"] = self.__parent._userid        
         values["actid"] = self.__parent._userid
-        values["susertoken"] = self.__parent._token
+        values["accesstoken"] = self.__parent._token
         values["source"] = 'API'                
         self.__parent._ws_send(values)
         self.__parent.IS_CONNECTED.set()
