@@ -35,6 +35,11 @@ class FeedType(Enum):
     TOUCHLINE = 1
     SNAPQUOTE = 2
 
+class AccessType(str, Enum):
+    API = "API"
+    WEB = "WEB"
+    MOB = "MOB"
+
 class ShoonyaTicker:
     token_limit = 30
     ping_interval = 3
@@ -59,6 +64,7 @@ class ShoonyaTicker:
         self.__on_open = None
         self._on_close= None
         self._disconnect_socket = False
+        self._access_type: AccessType = AccessType.API
 
         #self.__ping_msg = self._encode({"t": "h"})
         self.__disconnect_message = ShoonyaTicker._encode("Connection closed by the user.")
@@ -354,8 +360,9 @@ class ShoonyaTicker:
                 order_update_callback: Any= _dummy_callback,
                 error_callback: Any= None,
                 open_callback: Any= None,
-                close_callback: Any= None                                         
-            )-> None:
+                close_callback: Any= None,
+                access_type: Union[AccessType, Literal["API", "WEB", "MOB"]]= "API"                                         
+            )-> None:        
         self.__subscribe_callback = subscribe_callback
         self.__order_update_callback = order_update_callback
         self.__on_error = error_callback
@@ -369,6 +376,8 @@ class ShoonyaTicker:
                     "om": self.__order_update_callback,
                     **self.__callback_map
                     }
+        
+        self._access_type = access_type if isinstance(access_type, AccessType) else AccessType(access_type)
         
         self._loop.create_task(self.start_ticker())
     
@@ -414,12 +423,25 @@ class ShoonyaClient(WSListener):
             transport: WSTransport
             )-> None:
         self.transport = transport
-        self.__parent.transport = transport 
-        values = {"t": "a"}
+        self.__parent.transport = transport
+
+        is_api: bool = self.__parent._access_type == AccessType.API
+
+        if is_api:
+            values = {"t": "a"}
+        else:
+            values = {"t": "c"}
+
         values["uid"] = self.__parent._userid        
         values["actid"] = self.__parent._userid
-        values["accesstoken"] = self.__parent._token
-        values["source"] = 'API'                
+
+        if is_api:
+            values["accesstoken"] = self.__parent._token
+        else:
+            values["susertoken"] = self.__parent._token
+
+        values["source"] = self.__parent._access_type.value               
+
         self.__parent._ws_send(values)
         self.__parent.IS_CONNECTED.set()
     
