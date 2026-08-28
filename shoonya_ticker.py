@@ -9,6 +9,7 @@
 __author__ = "Tapan Hazarika"
 
 import asyncio
+import errno
 import logging
 import platform
 import random
@@ -47,6 +48,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["AccessType", "FeedType", "ShoonyaTicker"]
+
 
 class FeedType(Enum):
     TOUCHLINE = 1
@@ -72,6 +75,9 @@ class ShoonyaTicker:
     max_backoff = 5.0
     backoff_multiplier = 2.0
     backoff_jitter = 0.3
+    no_network_retry_interval = 0.5
+    pinning_probe_interval = 300.0
+    min_stable_before_probe = 30.0
     stall_alert_every = 5
 
     def __init__(
@@ -97,6 +103,9 @@ class ShoonyaTicker:
 
         self._stop_event = asyncio.Event()
         self.IS_CONNECTED = asyncio.Event()
+
+        self._last_pin_probe_at = 0.0
+        self._last_pin_stable_duration = 0.0
 
         self._shutdown_initiated = False
         # self._pong_event = asyncio.Event()
@@ -192,6 +201,20 @@ class ShoonyaTicker:
         self._ip_quarantine[ip] = time.monotonic() + self.quarantine_secs
         logger.warning(f"Quarantining backend {ip} for {self.quarantine_secs}s")
 
+    async def _sleep_no_network(self) -> None:
+        logger.debug(
+            f"No local network path -- retrying in {self.no_network_retry_interval:.2f}s"
+        )
+        try:
+            await asyncio.wait_for(
+                self._abort_backoff_event.wait(),
+                timeout=self.no_network_retry_interval,
+            )
+        except (TimeoutError, asyncio.TimeoutError):
+            pass
+        else:
+            logger.info("No-network retry wait aborted early -- close requested")
+
     async def _sleep_backoff(self) -> None:
         self._consecutive_full_failures += 1
         n = self._consecutive_full_failures
@@ -260,6 +283,7 @@ class ShoonyaTicker:
                 continue
             else:
                 self._last_used_ip = ip
+                self._ip_quarantine.pop(ip, None)
                 return sock
 
         raise (
@@ -462,12 +486,24 @@ class ShoonyaTicker:
                     pass
         self._ws_send(values)
 
-    # recoonect is stale now; will remove in a later update
+    def _pin_probe_due(self) -> bool:
+        if self._last_pin_stable_duration < self.min_stable_before_probe:
+            return False
+        if time.monotonic() - self._last_pin_probe_at < self.pinning_probe_interval:
+            return False
+        self._last_pin_probe_at = time.monotonic()
+        return True
+
+    # reconnect is stale now; will remove in a later update
 
     async def start_ticker(self, reconnect: bool = False) -> None:
         if self._disconnect_socket:
             self._initiate_shutdown()
             return
+
+        if self._pinning_enabled and self._pin_probe_due():
+            logger.info("Pinned session was stable -- probing normal path for recovery")
+            self._pinning_enabled = False
 
         ssl_context = self._ssl_context or ShoonyaTicker.create_client_ssl_context(
             verify=self._verify_ssl
@@ -490,7 +526,7 @@ class ShoonyaTicker:
                         auto_ping_idle_timeout=3,
                         auto_ping_reply_timeout=2,
                         auto_ping_strategy=WSAutoPingStrategy.PING_WHEN_IDLE,
-                        use_aiofastnet=False,
+                        use_aiofastnet=True,
                     ),
                     timeout=self.handshake_timeout,
                 )
@@ -525,23 +561,33 @@ class ShoonyaTicker:
                     auto_ping_idle_timeout=3,
                     auto_ping_reply_timeout=2,
                     auto_ping_strategy=WSAutoPingStrategy.PING_WHEN_IDLE,
-                    use_aiofastnet=False,
+                    use_aiofastnet=True,
                 ),
                 timeout=self.handshake_timeout,
             )
-        except (
-            socket.gaierror,
-            OSError,
-            asyncio.TimeoutError,
-            WSInvalidStatusError,
-        ) as e:
+
+        except socket.gaierror as e:
+            logger.error(f"DNS unreachable -- no local network path :: {e}")
+            await self._sleep_no_network()
+            return await self.start_ticker(reconnect=True)
+        except OSError as e:
+            if e.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN):
+                logger.error(f"Network unreachable -- no local route :: {e}")
+                await self._sleep_no_network()
+            else:
+                logger.error(f"All failover candidates failed, backing off :: {e}")
+                await self._sleep_backoff()
+            return await self.start_ticker(reconnect=True)
+        except (asyncio.TimeoutError, WSInvalidStatusError) as e:
             logger.error(f"All failover candidates failed, backing off :: {e}")
             await self._sleep_backoff()
             return await self.start_ticker(reconnect=True)
+
         else:
-            self._reset_backoff()
+            connected_at = time.monotonic()
             logger.info(f"Connected via {self._last_used_ip} (failover mode)")
             await transport.wait_disconnected()
+            self._last_pin_stable_duration = time.monotonic() - connected_at
             return
 
     def start_websocket(
