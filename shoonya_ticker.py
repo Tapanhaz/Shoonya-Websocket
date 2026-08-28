@@ -88,12 +88,14 @@ class ShoonyaTicker:
         loop: asyncio.AbstractEventLoop | None = None,
         ssl_context: ssl.SSLContext | None = None,
         verify_ssl: bool = False,
+        enable_ip_pinning: bool = False,
     ) -> None:
         self._ws_endpoint = ws_endpoint
         self._userid = userid
         self._token = token
         self._ssl_context = ssl_context
         self._verify_ssl = verify_ssl
+        self._pinning_feature_enabled = enable_ip_pinning
 
         self._pinning_enabled = False
         self._ip_quarantine: dict[str, float] = {}
@@ -332,6 +334,7 @@ class ShoonyaTicker:
             await asyncio.wait_for(self._stop_event.wait(), timeout=2)
         except TimeoutError:
             self._initiate_shutdown()
+
         signal.raise_signal(signum)
 
     def add_signal_handler(self):
@@ -530,16 +533,32 @@ class ShoonyaTicker:
                     ),
                     timeout=self.handshake_timeout,
                 )
-            except (
-                socket.gaierror,
-                OSError,
-                asyncio.TimeoutError,
-                WSInvalidStatusError,
-            ) as e:
-                logger.warning(
-                    f"Connect to {__host} failed, switching to per-IP failover :: {e}"
-                )
-                self._pinning_enabled = True
+            except socket.gaierror as e:
+                logger.error(f"DNS unreachable -- no local network path :: {e}")
+                await self._sleep_no_network()
+                return await self.start_ticker(reconnect=True)
+            except OSError as e:
+                if e.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN):
+                    logger.error(f"Network unreachable -- no local route :: {e}")
+                    await self._sleep_no_network()
+                elif self._pinning_feature_enabled:
+                    logger.warning(
+                        f"Connect to {__host} failed, switching to per-IP failover :: {e}"
+                    )
+                    self._pinning_enabled = True
+                else:
+                    logger.error(f"Connect to {__host} failed, backing off :: {e}")
+                    await self._sleep_backoff()
+                return await self.start_ticker(reconnect=True)
+            except (asyncio.TimeoutError, WSInvalidStatusError) as e:
+                if self._pinning_feature_enabled:
+                    logger.warning(
+                        f"Connect to {__host} failed, switching to per-IP failover :: {e}"
+                    )
+                    self._pinning_enabled = True
+                else:
+                    logger.error(f"Connect to {__host} failed, backing off :: {e}")
+                    await self._sleep_backoff()
                 return await self.start_ticker(reconnect=True)
             else:
                 self._reset_backoff()
@@ -584,6 +603,7 @@ class ShoonyaTicker:
             return await self.start_ticker(reconnect=True)
 
         else:
+            self._reset_backoff()
             connected_at = time.monotonic()
             logger.info(f"Connected via {self._last_used_ip} (failover mode)")
             await transport.wait_disconnected()
