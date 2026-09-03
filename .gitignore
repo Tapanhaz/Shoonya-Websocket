@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
-test.py
+t*.py
 mock_502.py
