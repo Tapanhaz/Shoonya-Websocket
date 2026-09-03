@@ -12,6 +12,23 @@ pip install -r requirements.txt
 
 It requires python >= 3.11 to be installed
 
+## Optional: AZ-aware IP pinning failover (experimental)
+
+By default, `ShoonyaTicker` reconnects using the plain hostname, same as
+always. If your deployment experiences intermittent `502`s, you can opt into per-ip 
+failover by setting enable_ip_pinning=True. ( This will not help with the shoonya API endpoint, 
+but it may help with Flattrade.)
+
+
+```python
+ticker = ShoonyaTicker(
+    ws_endpoint, user_id, token, loop,
+    enable_ip_pinning=True,
+    verify_ssl=True,
+)
+```
+
+
 # Example
 
 =======
