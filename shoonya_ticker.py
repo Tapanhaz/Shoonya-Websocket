@@ -16,6 +16,7 @@ import random
 import signal
 import socket
 import ssl
+import sys
 import time
 from collections.abc import Generator
 from enum import Enum
@@ -328,6 +329,7 @@ class ShoonyaTicker:
             return
         self._shutdown_initiated = True
 
+        sys.stdout.write("\n")
         logger.info("WebSocket closure initiated by user interrupt.")
         self.close_websocket()
         try:
